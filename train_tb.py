@@ -51,6 +51,7 @@ try:
 except AttributeError:
     pass
 
+from taowei.timer import Timer
 from taowei.torch2.utils.logging import initialize_logger, initialize_tb_writer
 
 torch.backends.cudnn.benchmark = True
@@ -251,6 +252,8 @@ parser.add_argument('--tta', type=int, default=0, metavar='N',
 parser.add_argument("--local_rank", default=0, type=int)
 parser.add_argument('--use-multi-epochs-loader', action='store_true', default=False,
                     help='use the multi-epochs-loader to save time at the beginning of every epoch')
+parser.add_argument('--eval-first', action='store_true',
+                    help='evaluate fist before training')
 
 
 def _parse_args():
@@ -296,10 +299,8 @@ def main():
     assert args.rank >= 0
 
     # output dir
-    if args.output:
-        args.output_dir = args.output
-    else:
-        args.output_dir = '.'
+    args.log_file = 'stdout.log.txt'
+    args.output_dir = '.' if not args.output else args.output
     if args.local_rank == 0:
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
@@ -440,6 +441,8 @@ def main():
         start_epoch = args.start_epoch
     elif resume_epoch is not None:
         start_epoch = resume_epoch
+    args.start_epoch = start_epoch
+
     if lr_scheduler is not None and start_epoch > 0:
         lr_scheduler.step(start_epoch)
 
@@ -557,7 +560,10 @@ def main():
             f.write(args_text)
 
     try:
+        if args.eval_first:
+            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
         for epoch in range(start_epoch, num_epochs):
+            args.epoch = epoch
             if args.distributed:
                 loader_train.sampler.set_epoch(epoch)
 
@@ -584,9 +590,9 @@ def main():
                 # step LR for next epoch
                 lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
 
-            update_summary(
-                epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
-                write_header=best_metric is None)
+            # update_summary(
+                # epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
+                # write_header=best_metric is None)
 
             if saver is not None:
                 # save proper checkpoint with eval metric
@@ -639,10 +645,11 @@ def train_epoch(
         with amp_autocast():
             output = model(input)
             loss = loss_fn(output, target)
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
         progress.update('forward_time', timer.toc(from_last_toc=True))
 
-        if not args.distributed:
-            losses_m.update(loss.item(), input.size(0))
+        # if not args.distributed:
+            # losses_m.update(loss.item(), input.size(0))
 
         optimizer.zero_grad()
         if loss_scaler is not None:
@@ -654,33 +661,36 @@ def train_epoch(
             optimizer.step()
             progress.update('update_time', timer.toc(from_last_toc=True))
 
+        if args.distributed:
+            reduced_loss = reduce_tensor(loss.data, args.world_size)
+            acc1 = reduce_tensor(acc1, args.world_size)
+            acc5 = reduce_tensor(acc5, args.world_size)
+        else:
+            reduced_loss = loss.data
+
         torch.cuda.synchronize()
+
+        n = output.size(0)
+        progress.update('loss', loss.item(), n)
+        progress.update('top1', acc1.item(), n)
+        progress.update('top5', acc5.item(), n)
+
+        # torch.cuda.synchronize()
         if model_ema is not None:
             model_ema.update(model)
         num_updates += 1
 
-        batch_time_m.update(time.time() - end)
+        # measure elapsed time
+        progress.update('batch_time', timer.toctic())
+
+        # batch_time_m.update(time.time() - end)
         if last_batch or batch_idx % args.log_interval == 0:
-            lrl = [param_group['lr'] for param_group in optimizer.param_groups]
-            lr = sum(lrl) / len(lrl)
+            # lrl = [param_group['lr'] for param_group in optimizer.param_groups]
+            # lr = sum(lrl) / len(lrl)
 
             # if args.distributed:
             #     reduced_loss = reduce_tensor(loss.data, args.world_size)
             #     losses_m.update(reduced_loss.item(), input.size(0))
-
-            if args.distributed:
-                reduced_loss = reduce_tensor(loss.data, args.world_size)
-                acc1 = reduce_tensor(acc1, args.world_size)
-                acc5 = reduce_tensor(acc5, args.world_size)
-            else:
-                reduced_loss = loss.data
-
-            torch.cuda.synchronize()
-
-            n = output.size(0)
-            progress.update('loss', loss.item(), n)
-            progress.update('top1', acc1.item(), n)
-            progress.update('top5', acc5.item(), n)
 
             if args.local_rank == 0:
                 progress.log_iter_stats(iter=batch_idx, batch_size=n, lr=optimizer.param_groups[0]['lr'])
@@ -713,7 +723,7 @@ def train_epoch(
             saver.save_recovery(epoch, batch_idx=batch_idx)
 
         if lr_scheduler is not None:
-            lr_scheduler.step_update(num_updates=num_updates, metric=losses_m.avg)
+            lr_scheduler.step_update(num_updates=num_updates, metric=progress.stats['loss'].avg) # losses_m.avg)
 
         # end = time.time()
         # end for
