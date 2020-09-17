@@ -51,8 +51,10 @@ try:
 except AttributeError:
     pass
 
+import json
 from taowei.timer import Timer
 from taowei.torch2.utils.logging import initialize_logger, initialize_tb_writer
+from taowei.torch2.utils.classif import print_torch_info
 
 torch.backends.cudnn.benchmark = True
 # _logger = logging.getLogger('train')
@@ -221,7 +223,7 @@ parser.add_argument('--model-ema-decay', type=float, default=0.9998,
 # Misc
 parser.add_argument('--seed', type=int, default=42, metavar='S',
                     help='random seed (default: 42)')
-parser.add_argument('--log-interval', type=int, default=50, metavar='N',
+parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--recovery-interval', type=int, default=0, metavar='N',
                     help='how many batches to wait before writing recovery checkpoint')
@@ -306,6 +308,8 @@ def main():
             os.makedirs(args.output_dir)
 
     initialize_logger(os.path.join(args.output_dir, args.log_file), distributed=args.distributed)
+    print(json.dumps(args.__dict__, indent=4))
+    print_torch_info()
     args.writer = initialize_tb_writer(os.path.join(args.output_dir, 'runs'), distributed=args.distributed)
 
     if args.distributed:
@@ -335,6 +339,23 @@ def main():
                      (args.model, sum([m.numel() for m in model.parameters()])))
 
     data_config = resolve_data_config(vars(args), model=model, verbose=args.local_rank == 0)
+
+    # print model summary and plot network
+    try:
+        from taowei.torch2.utils.viz import print_summary, plot_network
+        model.eval() # NOTE: avoid batch_norm buffer being changed
+        if 'input_size' in data_config:
+            data_shape = (1, ) + tuple(data_config['input_size'])
+        else:
+            data_shape = (1, 3, 224, 224)
+        print_summary(model, data_shape=data_shape)
+        if not args.distributed:
+            plot_network(model, data_shape=data_shape).save(os.path.join(args.output_dir, args.model) + '.gv')
+    except Exception as e:
+        print(e)
+    model_strs = str(model).split('\n')
+    model_strs = model_strs[:25] + ['... ...'] + model_strs[-25:] if len(model_strs) > 50 else model_strs
+    print('\n'.join(model_strs)) # INFO: for DataParallel or DistributedDataParallel, BatchNorm momentum etc.
 
     num_aug_splits = 0
     if args.aug_splits > 0:
@@ -373,6 +394,7 @@ def main():
             model = model.to(memory_format=torch.channels_last)
 
     optimizer = create_optimizer(args, model)
+    print('Optimizer: {}'.format(optimizer))
 
     amp_autocast = suppress  # do nothing
     loss_scaler = None
@@ -435,6 +457,7 @@ def main():
         # NOTE: EMA model does not need to be wrapped by DDP
 
     lr_scheduler, num_epochs = create_scheduler(args, optimizer)
+    print('LR Scheduler:\n{}'.format(lr_scheduler))
     start_epoch = 0
     if args.start_epoch is not None:
         # a specified start_epoch will always override the resume epoch
@@ -502,6 +525,11 @@ def main():
         pin_memory=args.pin_mem,
         use_multi_epochs_loader=args.use_multi_epochs_loader
     )
+    try:
+        print('Train Dataset:\n{}'.format(loader_train.dataset))
+        print('Train Transform:\n{}'.format(loader_train.dataset.transform))
+    except:
+        pass
 
     eval_dir = os.path.join(args.data, 'val')
     if not os.path.isdir(eval_dir):
@@ -525,6 +553,11 @@ def main():
         crop_pct=data_config['crop_pct'],
         pin_memory=args.pin_mem,
     )
+    try:
+        print('Val Dataset:\n{}'.format(loader_eval.dataset))
+        print('Val Transform:\n{}'.format(loader_eval.dataset.transform))
+    except:
+        pass
 
     if args.jsd:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
@@ -536,6 +569,7 @@ def main():
         train_loss_fn = LabelSmoothingCrossEntropy(smoothing=args.smoothing).cuda()
     else:
         train_loss_fn = nn.CrossEntropyLoss().cuda()
+    print('Loss Function:\n{}'.format(train_loss_fn))
     validate_loss_fn = nn.CrossEntropyLoss().cuda()
 
     eval_metric = args.eval_metric
