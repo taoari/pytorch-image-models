@@ -56,6 +56,8 @@ from taowei.timer import Timer
 from taowei.torch2.utils.logging import initialize_logger, initialize_tb_writer
 from taowei.torch2.utils.classif import print_torch_info
 
+writer = None # NOTE: do not use args.writer, because args.writer can not be pickled
+
 torch.backends.cudnn.benchmark = True
 # _logger = logging.getLogger('train')
 
@@ -310,7 +312,8 @@ def main():
     initialize_logger(os.path.join(args.output_dir, args.log_file), distributed=args.distributed)
     print(json.dumps(args.__dict__, indent=4))
     print_torch_info()
-    args.writer = initialize_tb_writer(os.path.join(args.output_dir, 'runs'), distributed=args.distributed)
+    global writer
+    writer = initialize_tb_writer(os.path.join(args.output_dir, 'runs'), distributed=args.distributed)
 
     if args.distributed:
         logging.info('Training in distributed mode with multiple processes, 1 GPU per process. Process %d, total %d.'
@@ -628,7 +631,7 @@ def main():
                 # epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
                 # write_header=best_metric is None)
 
-            if saver is not None:
+            if saver is not None and args.local_rank == 0:
                 # save proper checkpoint with eval metric
                 save_metric = eval_metrics[eval_metric]
                 best_metric, best_epoch = saver.save_checkpoint(epoch, metric=save_metric)
@@ -644,9 +647,10 @@ def train_epoch(
         lr_scheduler=None, saver=None, output_dir='', amp_autocast=suppress,
         loss_scaler=None, model_ema=None, mixup_fn=None):
 
+    global writer
     from taowei.torch2.utils.classif import ProgressMeter
     progress = ProgressMeter(iters_per_epoch=len(loader),
-        epoch=epoch, epochs=args.epochs, split='train', writer=args.writer, batch_size=args.batch_size)
+        epoch=epoch, epochs=args.epochs, split='train', writer=writer, batch_size=args.batch_size)
 
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if args.prefetcher and loader.mixup_enabled:
@@ -767,7 +771,7 @@ def train_epoch(
         optimizer.sync_lookahead()
 
     # return OrderedDict([('loss', losses_m.avg)])
-    return OrderedDict(['loss', progress.stats['loss'].avg])
+    return OrderedDict([('loss', progress.stats['loss'].avg)])
 
 
 def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix=''):
@@ -776,10 +780,11 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
     # top1_m = AverageMeter()
     # top5_m = AverageMeter()
 
+    global writer
     from taowei.torch2.utils.classif import ProgressMeter
     epoch = args.start_epoch - 1 if 'epoch' not in args else args.epoch
     progress = ProgressMeter(iters_per_epoch=len(loader),
-        epoch=epoch, split='val', writer=args.writer, batch_size=args.batch_size)
+        epoch=epoch, split='val', writer=writer, batch_size=args.batch_size)
 
     model.eval()
 
