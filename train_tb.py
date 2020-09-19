@@ -75,6 +75,8 @@ parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
 parser.add_argument('--model', default='resnet101', type=str, metavar='MODEL',
                     help='Name of model to train (default: "countception"')
+parser.add_argument('--model-kwargs', metavar='KWARGS', default='{}',
+                    help='model architecture keyword arguments')
 parser.add_argument('--pretrained', action='store_true', default=False,
                     help='Start with pretrained version of specified network (if avail)')
 parser.add_argument('--initial-checkpoint', default='', type=str, metavar='PATH',
@@ -323,19 +325,24 @@ def main():
 
     torch.manual_seed(args.seed + args.rank)
 
-    model = create_model(
-        args.model,
-        pretrained=args.pretrained,
-        num_classes=args.num_classes,
-        drop_rate=args.drop,
-        drop_connect_rate=args.drop_connect,  # DEPRECATED, use drop_path
-        drop_path_rate=args.drop_path,
-        drop_block_rate=args.drop_block,
-        global_pool=args.gp,
-        bn_tf=args.bn_tf,
-        bn_momentum=args.bn_momentum,
-        bn_eps=args.bn_eps,
-        checkpoint_path=args.initial_checkpoint)
+    if '.' in args.model:
+        from taowei.torch2.models import load_network
+        model = load_network(args.model, **eval(args.model_kwargs))
+        logging.info('Creating custom model {} with kwargs {}. Dropout, DropPath, DropBlock may not be supported'.format(args.model, args.model_kwargs))
+    else:
+        model = create_model(
+            args.model,
+            pretrained=args.pretrained,
+            num_classes=args.num_classes,
+            drop_rate=args.drop,
+            drop_connect_rate=args.drop_connect,  # DEPRECATED, use drop_path
+            drop_path_rate=args.drop_path,
+            drop_block_rate=args.drop_block,
+            global_pool=args.gp,
+            bn_tf=args.bn_tf,
+            bn_momentum=args.bn_momentum,
+            bn_eps=args.bn_eps,
+            checkpoint_path=args.initial_checkpoint)
 
     if args.local_rank == 0:
         logging.info('Model %s created, param count: %d' %
@@ -352,7 +359,7 @@ def main():
         else:
             data_shape = (1, 3, 224, 224)
         print_summary(model, data_shape=data_shape)
-        if not args.distributed:
+        if args.local_rank == 0:
             plot_network(model, data_shape=data_shape).save(os.path.join(args.output_dir, args.model) + '.gv')
     except Exception as e:
         print(e)
