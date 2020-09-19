@@ -656,8 +656,9 @@ def train_epoch(
 
     global writer
     from taowei.torch2.utils.classif import ProgressMeter
+    batch_size = args.batch_size * args.world_size if args.distributed else args.batch_size
     progress = ProgressMeter(iters_per_epoch=len(loader),
-        epoch=epoch, epochs=args.epochs, split='train', writer=writer, batch_size=args.batch_size)
+        epoch=epoch, epochs=args.epochs, split='train', writer=writer, batch_size=batch_size)
 
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if args.prefetcher and loader.mixup_enabled:
@@ -715,7 +716,7 @@ def train_epoch(
 
         torch.cuda.synchronize()
 
-        n = output.size(0)
+        n = output.size(0) * args.world_size if args.distributed else output.size(0)
         progress.update('loss', loss.item(), n)
         progress.update('top1', acc1.item(), n)
         progress.update('top5', acc5.item(), n)
@@ -790,8 +791,9 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
     global writer
     from taowei.torch2.utils.classif import ProgressMeter
     epoch = args.start_epoch - 1 if 'epoch' not in args else args.epoch
+    batch_size = args.batch_size * args.world_size if args.distributed else args.batch_size
     progress = ProgressMeter(iters_per_epoch=len(loader),
-        epoch=epoch, split='val', writer=writer, batch_size=args.batch_size)
+        epoch=epoch, split='val', writer=writer, batch_size=batch_size)
 
     model.eval()
 
@@ -836,7 +838,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
             # losses_m.update(reduced_loss.item(), input.size(0))
             # top1_m.update(acc1.item(), output.size(0))
             # top5_m.update(acc5.item(), output.size(0))
-            n = output.size(0)
+            n = output.size(0) * args.world_size if args.distributed else output.size(0)
             progress.update('loss', loss.item(), n)
             progress.update('top1', acc1.item(), n)
             progress.update('top5', acc5.item(), n)
