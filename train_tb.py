@@ -61,6 +61,25 @@ writer = None # NOTE: do not use args.writer, because args.writer can not be pic
 torch.backends.cudnn.benchmark = True
 # _logger = logging.getLogger('train')
 
+
+def add_bool_group(parser, flag, default=False, help=None):
+    """Add --<flag> and --no-<flag> to parser."""
+
+    # Set help to flag name if None
+    help = flag if help is None else help
+    # Replace '-' to '_' for flag name since '-' is not allowed for variable name
+    _flag = flag.replace('-', '_')
+    # Add a mutex group with --<flag> and --no-<flag>
+    flag_parser = parser.add_mutually_exclusive_group(required=False)
+    flag_parser.add_argument('--' + flag, dest=_flag, action='store_true',
+        help='enable {}'.format(help))
+    flag_parser.add_argument('--no-' + flag, dest=_flag, action='store_false',
+        help='disable {}'.format(help))
+    # Set default (flag is set to False by default)
+    if default is True:
+        parser.set_defaults(**{_flag: True})
+
+
 # The first arg parser parses out only the --config argument, this argument is used to
 # load a yaml file containing key-values that override the defaults for the main parser below
 config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
@@ -163,6 +182,8 @@ parser.add_argument('--vflip', type=float, default=0.,
                     help='Vertical flip training aug probability')
 parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
                     help='Color jitter factor (default: 0.4)')
+parser.add_argument('--color-jitter-hue', type=float, default=0.0, metavar='PCT',
+                    help='Color jitter hue factor (default: 0.0)')
 parser.add_argument('--aa', type=str, default=None, metavar='NAME',
                     help='Use AutoAugment policy. "v0" or "original". (default: None)'),
 parser.add_argument('--aug-splits', type=int, default=0,
@@ -249,8 +270,8 @@ parser.add_argument('--channels-last', action='store_true', default=False,
                     help='Use channels_last memory layout')
 parser.add_argument('--pin-mem', action='store_true', default=False,
                     help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
-parser.add_argument('--no-prefetcher', action='store_true', default=False,
-                    help='disable fast prefetcher')
+# parser.add_argument('--no-prefetcher', action='store_true', default=False,
+                    # help='disable fast prefetcher')
 parser.add_argument('--output', default='', type=str, metavar='PATH',
                     help='path to output folder (default: none, current dir)')
 parser.add_argument('--eval-metric', default='top1', type=str, metavar='EVAL_METRIC',
@@ -260,8 +281,10 @@ parser.add_argument('--tta', type=int, default=0, metavar='N',
 parser.add_argument("--local_rank", default=0, type=int)
 parser.add_argument('--use-multi-epochs-loader', action='store_true', default=False,
                     help='use the multi-epochs-loader to save time at the beginning of every epoch')
-parser.add_argument('--eval-first', action='store_true',
-                    help='evaluate fist before training')
+
+add_bool_group(parser, 'prefetcher', default=True, help='fast prefetcher')
+add_bool_group(parser, 'eval-first', help='evaluate first before training')
+add_bool_group(parser, 'filter-bias-and-bn', default=True, help='filter bias and bn for optimizer')
 
 
 def _parse_args():
@@ -285,7 +308,7 @@ def main():
     # setup_default_logging()
     args, args_text = _parse_args()
 
-    args.prefetcher = not args.no_prefetcher
+    # args.prefetcher = not args.no_prefetcher
     args.distributed = False
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
@@ -305,6 +328,9 @@ def main():
         args.world_size = torch.distributed.get_world_size()
         args.rank = torch.distributed.get_rank()
     assert args.rank >= 0
+
+    if args.color_jitter_hue > 0.0:
+        args.color_jitter = tuple([args.color_jitter] * 3 + [args.color_jitter_hue])
 
     # output dir
     args.log_file = 'stdout.log.txt'
@@ -406,7 +432,7 @@ def main():
         if args.channels_last:
             model = model.to(memory_format=torch.channels_last)
 
-    optimizer = create_optimizer(args, model)
+    optimizer = create_optimizer(args, model, filter_bias_and_bn=args.filter_bias_and_bn)
     print('Optimizer: {}'.format(optimizer))
 
     amp_autocast = suppress  # do nothing
