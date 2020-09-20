@@ -809,9 +809,9 @@ def train_epoch(
                         padding=0,
                         normalize=True)
 
-        if saver is not None and args.recovery_interval and (
-                last_batch or (batch_idx + 1) % args.recovery_interval == 0):
-            saver.save_recovery(epoch, batch_idx=batch_idx)
+        # if saver is not None and args.recovery_interval and (
+        #         last_batch or (batch_idx + 1) % args.recovery_interval == 0):
+        #     saver.save_recovery(epoch, batch_idx=batch_idx)
 
         if lr_scheduler is not None:
             lr_scheduler.step_update(num_updates=num_updates, metric=progress.stats['loss'].avg) # losses_m.avg)
