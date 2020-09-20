@@ -169,6 +169,7 @@ def create_transform(
         is_training=False,
         use_prefetcher=False,
         no_aug=False,
+        data_aug='',
         scale=None,
         ratio=None,
         hflip=0.5,
@@ -190,6 +191,13 @@ def create_transform(
         img_size = input_size[-2:]
     else:
         img_size = input_size
+
+    if data_aug:
+        # Delegate transform to get_transform, prefetcher and separated are not supported
+        assert use_prefetcher == separate == False
+        from taowei.torch2.utils.classif import get_transform
+        transform = get_transform(data_aug, is_train=is_training, crop_size=img_size)
+        return transform
 
     if tf_preprocessing and use_prefetcher:
         assert not separate, "Separate transforms not supported for TF preprocessing"

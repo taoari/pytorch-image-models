@@ -149,6 +149,8 @@ parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RA
                     help='LR decay rate (default: 0.1)')
 
 # Augmentation & regularization parameters
+parser.add_argument('--data-aug', default='',
+                    help='Data augmentation strategy by name, e.g. fbresearch etc.')
 parser.add_argument('--no-aug', action='store_true', default=False,
                     help='Disable all training augmentation, override other train aug args')
 parser.add_argument('--scale', type=float, nargs='+', default=[0.08, 1.0], metavar='PCT',
@@ -516,6 +518,7 @@ def main():
         is_training=True,
         use_prefetcher=args.prefetcher,
         no_aug=args.no_aug,
+        data_aug=args.data_aug,
         re_prob=args.reprob,
         re_mode=args.remode,
         re_count=args.recount,
@@ -557,6 +560,8 @@ def main():
         batch_size=args.validation_batch_size_multiplier * args.batch_size,
         is_training=False,
         use_prefetcher=args.prefetcher,
+        data_aug=args.data_aug,
+        re_prob=args.reprob, # NOTE: re_prob used for evaluation (supressed in create_transform iwth is_training=False)
         interpolation=data_config['interpolation'],
         mean=data_config['mean'],
         std=data_config['std'],
