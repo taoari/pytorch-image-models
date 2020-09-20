@@ -17,7 +17,7 @@ Hacked together by / Copyright 2020 Ross Wightman (https://github.com/rwightman)
 import argparse
 import time
 import yaml
-import os
+import os, sys
 import logging
 from collections import OrderedDict
 from contextlib import suppress
@@ -312,6 +312,7 @@ def main():
             os.makedirs(args.output_dir)
 
     initialize_logger(os.path.join(args.output_dir, args.log_file), distributed=args.distributed)
+    print('Cmd:\n{}'.format(' '.join(sys.argv)))
     print(json.dumps(args.__dict__, indent=4))
     print_torch_info()
     global writer
@@ -536,6 +537,7 @@ def main():
         use_multi_epochs_loader=args.use_multi_epochs_loader
     )
     try:
+        print('Data Config:\n{}'.format(data_config)) # For Transform
         print('Train Dataset:\n{}'.format(loader_train.dataset))
         print('Train Transform:\n{}'.format(loader_train.dataset.transform))
     except:
@@ -681,6 +683,12 @@ def train_epoch(
         last_batch = batch_idx == last_idx
         # data_time_m.update(time.time() - end)
         progress.update('data_time', timer.toc(from_last_toc=True))
+
+        if batch_idx  == 0:
+            print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
+                'min': input.min().item(), 'max': input.max().item()}))
+            print('Target: {} shape={}'.format(target, target.shape))
+
         if not args.prefetcher:
             input, target = input.cuda(), target.cuda()
             if mixup_fn is not None:
@@ -805,6 +813,12 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
         for batch_idx, (input, target) in enumerate(loader):
             last_batch = batch_idx == last_idx
             progress.update('data_time', timer.toc(from_last_toc=True))
+
+            if batch_idx  == 0:
+                print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
+                    'min': input.min().item(), 'max': input.max().item()}))
+                print('Target: {} shape={}'.format(target, target.shape))
+
             if not args.prefetcher:
                 input = input.cuda()
                 target = target.cuda()
