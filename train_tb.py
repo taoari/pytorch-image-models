@@ -593,7 +593,6 @@ def main():
         is_training=False,
         use_prefetcher=args.prefetcher,
         data_aug=args.data_aug,
-        re_prob=args.reprob, # NOTE: re_prob used for evaluation (supressed in create_transform iwth is_training=False)
         interpolation=data_config['interpolation'],
         mean=data_config['mean'],
         std=data_config['std'],
