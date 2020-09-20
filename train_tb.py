@@ -283,9 +283,10 @@ parser.add_argument('--use-multi-epochs-loader', action='store_true', default=Fa
                     help='use the multi-epochs-loader to save time at the beginning of every epoch')
 
 add_bool_group(parser, 'prefetcher', default=True, help='fast prefetcher')
-add_bool_group(parser, 'eval-first', help='evaluate first before training')
 add_bool_group(parser, 'filter-bias-and-bn', default=True, help='filter bias and bn for optimizer')
 add_bool_group(parser, 'auto-resume', default=True, help='auto resume model from last checkpoint')
+add_bool_group(parser, 'eval-first', default=False, help='evaluate first before training')
+add_bool_group(parser, 'use-precise-bn-stats', default=False, help='use precise bn stats')
 
 
 def _parse_args():
@@ -666,6 +667,11 @@ def main():
                 if args.local_rank == 0:
                     logging.info("Distributing BatchNorm running means and vars")
                 distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
+
+            if args.use_precise_bn_stats:
+                print('Computing precise bn stats')
+                from taowei.torch2.utils.distributed import compute_precise_bn_stats
+                compute_precise_bn_stats(model, loader_train, args.world_size)
 
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
 
