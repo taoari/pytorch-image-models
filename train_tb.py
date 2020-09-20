@@ -285,6 +285,7 @@ parser.add_argument('--use-multi-epochs-loader', action='store_true', default=Fa
 add_bool_group(parser, 'prefetcher', default=True, help='fast prefetcher')
 add_bool_group(parser, 'eval-first', help='evaluate first before training')
 add_bool_group(parser, 'filter-bias-and-bn', default=True, help='filter bias and bn for optimizer')
+add_bool_group(parser, 'auto-resume', default=True, help='auto resume model from last checkpoint')
 
 
 def _parse_args():
@@ -453,6 +454,11 @@ def main():
 
     # optionally resume from a checkpoint
     resume_epoch = None
+    # auto resume for last.pth.tar, resume is strict (can not mix distributed and multi-gpu)
+    if args.auto_resume:
+        checkpoint_file = os.path.join(args.output_dir, 'last.pth.tar')
+        if os.path.exists(checkpoint_file):
+            args.resume = checkpoint_file
     if args.resume:
         resume_epoch = resume_checkpoint(
             model, args.resume,
