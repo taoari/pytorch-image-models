@@ -106,6 +106,13 @@ class Dataset(data.Dataset):
             else:
                 return [x[0] for x in self.samples]
 
+    def __repr__(self):
+        format_string = self.__class__.__name__ + '('
+        for attr in ['root', 'transform']:
+            format_string += '\n    {}={}'.format(attr, getattr(self, attr))
+        format_string += '\n)'
+        return format_string
+
 
 def _extract_tar_info(tarfile, class_to_idx=None, sort=True):
     files = []
@@ -160,6 +167,13 @@ class DatasetTar(data.Dataset):
     def __len__(self):
         return len(self.samples)
 
+    def __repr__(self):
+        format_string = self.__class__.__name__ + '('
+        for attr in ['root', 'transform']:
+            format_string += '\n    {}={}'.format(attr, getattr(self, attr))
+        format_string += '\n)'
+        return format_string
+
 
 class AugMixDataset(torch.utils.data.Dataset):
     """Dataset wrapper to perform AugMix or other clean/augmentation mixes"""
@@ -199,3 +213,10 @@ class AugMixDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+    def __repr__(self):
+        format_string = self.__class__.__name__ + '('
+        for attr in ['dataset', 'augmentation', 'normalize']:
+            format_string += '\n    {}={}'.format(attr, getattr(self, attr))
+        format_string += '\n)'
+        return format_string
