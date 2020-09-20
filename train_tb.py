@@ -374,6 +374,14 @@ def main():
             bn_eps=args.bn_eps,
             checkpoint_path=args.initial_checkpoint)
 
+    # Modify BN momentum and eps 
+    bns = [m for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d)]
+    for bn in bns:
+        if args.bn_momentum:
+            bn.momentum = args.bn_momentum
+        if args.bn_eps:
+            bn.eps = args.bn_eps
+
     if args.local_rank == 0:
         logging.info('Model %s created, param count: %d' %
                      (args.model, sum([m.numel() for m in model.parameters()])))
