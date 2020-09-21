@@ -734,6 +734,11 @@ def train_epoch(
         # data_time_m.update(time.time() - end)
         progress.update('data_time', timer.toc(from_last_toc=True))
 
+        if not args.prefetcher and args.aug_splits > 1 and isinstance(input, (tuple, list)):
+            with torch.no_grad():
+                input = torch.cat(input)
+                target = torch.cat([target] * args.aug_splits)
+        
         if batch_idx  == 0:
             print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
                 'min': input.min().item(), 'max': input.max().item(), 'shape': input.shape}))
