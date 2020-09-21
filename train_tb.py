@@ -651,6 +651,11 @@ def main():
             f.write(args_text)
 
     try:
+        # compute precise bn stats before training, for quick debugging (e.g. no .batch_size)
+        if args.use_precise_bn_stats:
+            print('Computing precise bn stats')
+            from taowei.torch2.utils.distributed import compute_precise_bn_stats
+            compute_precise_bn_stats(model, loader_train, args.world_size)
         if args.eval_first:
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
         for epoch in range(start_epoch, num_epochs):
