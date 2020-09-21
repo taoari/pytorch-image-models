@@ -736,7 +736,7 @@ def train_epoch(
 
         if batch_idx  == 0:
             print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
-                'min': input.min().item(), 'max': input.max().item()}))
+                'min': input.min().item(), 'max': input.max().item(), 'shape': input.shape}))
             print('Target: {} shape={}'.format(target, target.shape))
 
         if not args.prefetcher:
@@ -749,7 +749,8 @@ def train_epoch(
         with amp_autocast():
             output = model(input)
             loss = loss_fn(output, target)
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            if target.ndim == 1:
+                acc1, acc5 = accuracy(output, target, topk=(1, 5))
         progress.update('forward_time', timer.toc(from_last_toc=True))
 
         # if not args.distributed:
@@ -767,8 +768,9 @@ def train_epoch(
 
         if args.distributed:
             reduced_loss = reduce_tensor(loss.data, args.world_size)
-            acc1 = reduce_tensor(acc1, args.world_size)
-            acc5 = reduce_tensor(acc5, args.world_size)
+            if target.ndim == 1:
+                acc1 = reduce_tensor(acc1, args.world_size)
+                acc5 = reduce_tensor(acc5, args.world_size)
         else:
             reduced_loss = loss.data
 
@@ -776,8 +778,9 @@ def train_epoch(
 
         n = output.size(0) * args.world_size if args.distributed else output.size(0)
         progress.update('loss', loss.item(), n)
-        progress.update('top1', acc1.item(), n)
-        progress.update('top5', acc5.item(), n)
+        if target.ndim == 1:
+            progress.update('top1', acc1.item(), n)
+            progress.update('top5', acc5.item(), n)
 
         # torch.cuda.synchronize()
         if model_ema is not None:
@@ -866,7 +869,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
 
             if batch_idx  == 0:
                 print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
-                    'min': input.min().item(), 'max': input.max().item()}))
+                    'min': input.min().item(), 'max': input.max().item(), 'shape': input.shape}))
                 print('Target: {} shape={}'.format(target, target.shape))
 
             if not args.prefetcher:
