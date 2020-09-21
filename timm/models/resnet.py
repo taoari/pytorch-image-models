@@ -567,6 +567,7 @@ class ResNet(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1.)
                 nn.init.constant_(m.bias, 0.)
+        print('Model {}: zero_init_last_bn: {}'.format(self.__class__.__name__, zero_init_last_bn))
         if zero_init_last_bn:
             for m in self.modules():
                 if hasattr(m, 'zero_init_last_bn'):

@@ -285,6 +285,7 @@ parser.add_argument('--use-multi-epochs-loader', action='store_true', default=Fa
 
 add_bool_group(parser, 'prefetcher', default=True, help='fast prefetcher')
 add_bool_group(parser, 'filter-bias-and-bn', default=True, help='filter bias and bn for optimizer')
+add_bool_group(parser, 'zero-init-last-bn', default=True, help='zero init last bn')
 add_bool_group(parser, 'auto-resume', default=True, help='auto resume model from last checkpoint')
 add_bool_group(parser, 'eval-first', default=False, help='evaluate first before training')
 add_bool_group(parser, 'use-precise-bn-stats', default=False, help='use precise bn stats')
@@ -362,19 +363,37 @@ def main():
         model = load_network(args.model, **eval(args.model_kwargs))
         logging.info('Creating custom model {} with kwargs {}. Dropout, DropPath, DropBlock may not be supported'.format(args.model, args.model_kwargs))
     else:
-        model = create_model(
-            args.model,
-            pretrained=args.pretrained,
-            num_classes=args.num_classes,
-            drop_rate=args.drop,
-            drop_connect_rate=args.drop_connect,  # DEPRECATED, use drop_path
-            drop_path_rate=args.drop_path,
-            drop_block_rate=args.drop_block,
-            global_pool=args.gp,
-            bn_tf=args.bn_tf,
-            bn_momentum=args.bn_momentum,
-            bn_eps=args.bn_eps,
-            checkpoint_path=args.initial_checkpoint)
+        try:
+            # try zero_init_last_bn, if model does not accept, fallback to original
+            model = create_model(
+                args.model,
+                pretrained=args.pretrained,
+                num_classes=args.num_classes,
+                drop_rate=args.drop,
+                drop_connect_rate=args.drop_connect,  # DEPRECATED, use drop_path
+                drop_path_rate=args.drop_path,
+                drop_block_rate=args.drop_block,
+                global_pool=args.gp,
+                bn_tf=args.bn_tf,
+                bn_momentum=args.bn_momentum,
+                bn_eps=args.bn_eps,
+                checkpoint_path=args.initial_checkpoint,
+                zero_init_last_bn=args.zero_init_last_bn) # try to see if model accepts zero_init_last_bn
+            logging.info('ZERO INIT LAST BN ({}) is passed to model. Warning: will fail if model does not accept it, may also be ignored if model accepts **kwargs'.format(args.zero_init_last_bn))
+        except:
+            model = create_model(
+                args.model,
+                pretrained=args.pretrained,
+                num_classes=args.num_classes,
+                drop_rate=args.drop,
+                drop_connect_rate=args.drop_connect,  # DEPRECATED, use drop_path
+                drop_path_rate=args.drop_path,
+                drop_block_rate=args.drop_block,
+                global_pool=args.gp,
+                bn_tf=args.bn_tf,
+                bn_momentum=args.bn_momentum,
+                bn_eps=args.bn_eps,
+                checkpoint_path=args.initial_checkpoint)
 
     # Modify BN momentum and eps 
     bns = [m for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d)]
