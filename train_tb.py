@@ -54,7 +54,8 @@ except AttributeError:
 import json
 from taowei.timer import Timer
 from taowei.torch2.utils.logging import initialize_logger, initialize_tb_writer
-from taowei.torch2.utils.classif import print_torch_info
+from taowei.torch2.utils.classif import print_torch_info, post_collate_fn
+from taowei.torch2.utils.distributed import compute_precise_bn_stats
 
 writer = None # NOTE: do not use args.writer, because args.writer can not be pickled
 
@@ -333,6 +334,10 @@ def main():
 
     if args.color_jitter_hue > 0.0:
         args.color_jitter = tuple([args.color_jitter] * 3 + [args.color_jitter_hue])
+    if args.prefetcher or args.aug_splits <= 1:
+        global post_collate_fn
+        post_collate_fn = None
+    print('post_collate_fn: {}'.format(post_collate_fn))
 
     # output dir
     args.log_file = 'stdout.log.txt'
@@ -654,8 +659,7 @@ def main():
         # compute precise bn stats before training, for quick debugging (e.g. no .batch_size)
         if args.use_precise_bn_stats:
             print('Computing precise bn stats')
-            from taowei.torch2.utils.distributed import compute_precise_bn_stats
-            compute_precise_bn_stats(model, loader_train, args.world_size)
+            compute_precise_bn_stats(model, loader_train, args.world_size, post_collate_fn=post_collate_fn)
         if args.eval_first:
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
         for epoch in range(start_epoch, num_epochs):
@@ -675,8 +679,7 @@ def main():
 
             if args.use_precise_bn_stats:
                 print('Computing precise bn stats')
-                from taowei.torch2.utils.distributed import compute_precise_bn_stats
-                compute_precise_bn_stats(model, loader_train, args.world_size)
+                compute_precise_bn_stats(model, loader_train, args.world_size, post_collate_fn=post_collate_fn)
 
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
 
@@ -739,10 +742,9 @@ def train_epoch(
         # data_time_m.update(time.time() - end)
         progress.update('data_time', timer.toc(from_last_toc=True))
 
-        if not args.prefetcher and args.aug_splits > 1 and isinstance(input, (tuple, list)):
+        if post_collate_fn is not None:
             with torch.no_grad():
-                input = torch.cat(input)
-                target = torch.cat([target] * args.aug_splits)
+                input, target = post_collate_fn((input, target))
         
         if batch_idx  == 0:
             print('Inputs: {}'.format({'mean': input.mean().item(), 'std': input.std().item(),
