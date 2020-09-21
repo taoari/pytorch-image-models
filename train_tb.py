@@ -334,10 +334,6 @@ def main():
 
     if args.color_jitter_hue > 0.0:
         args.color_jitter = tuple([args.color_jitter] * 3 + [args.color_jitter_hue])
-    if args.prefetcher or args.aug_splits <= 1:
-        global post_collate_fn
-        post_collate_fn = None
-    print('post_collate_fn: {}'.format(post_collate_fn))
 
     # output dir
     args.log_file = 'stdout.log.txt'
@@ -659,7 +655,7 @@ def main():
         # compute precise bn stats before training, for quick debugging (e.g. no .batch_size)
         if args.use_precise_bn_stats:
             print('Computing precise bn stats')
-            compute_precise_bn_stats(model, loader_train, args.world_size, post_collate_fn=post_collate_fn)
+            compute_precise_bn_stats(model, loader_train, args.world_size)
         if args.eval_first:
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
         for epoch in range(start_epoch, num_epochs):
@@ -679,7 +675,7 @@ def main():
 
             if args.use_precise_bn_stats:
                 print('Computing precise bn stats')
-                compute_precise_bn_stats(model, loader_train, args.world_size, post_collate_fn=post_collate_fn)
+                compute_precise_bn_stats(model, loader_train, args.world_size)
 
             eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
 
@@ -742,7 +738,7 @@ def train_epoch(
         # data_time_m.update(time.time() - end)
         progress.update('data_time', timer.toc(from_last_toc=True))
 
-        if post_collate_fn is not None:
+        if not torch.is_tensor(input) or not torch.is_tensor(target):
             with torch.no_grad():
                 input, target = post_collate_fn((input, target))
         
