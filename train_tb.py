@@ -333,9 +333,6 @@ def main():
         args.rank = torch.distributed.get_rank()
     assert args.rank >= 0
 
-    if args.color_jitter_hue > 0.0:
-        args.color_jitter = tuple([args.color_jitter] * 3 + [args.color_jitter_hue])
-
     # output dir
     args.log_file = 'stdout.log.txt'
     args.output_dir = '.' if not args.output else args.output
@@ -343,12 +340,21 @@ def main():
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
 
+    # initialize logger and tb writer
     initialize_logger(os.path.join(args.output_dir, args.log_file), distributed=args.distributed)
     print('Cmd:\n{}'.format(' '.join(sys.argv)))
     print(json.dumps(args.__dict__, indent=4))
     print_torch_info()
     global writer
     writer = initialize_tb_writer(os.path.join(args.output_dir, 'runs'), distributed=args.distributed)
+    
+    # validate args
+    if args.color_jitter_hue > 0.0:
+        args.color_jitter = tuple([args.color_jitter] * 3 + [args.color_jitter_hue])
+    if args.use_precise_bn_stats:
+        if args.dist_bn:
+            logging.warning('use_precise_bn_stats overwrites dist_bn. Setting dist_bn to empty')
+            args.dist_bn = ''
 
     if args.distributed:
         logging.info('Training in distributed mode with multiple processes, 1 GPU per process. Process %d, total %d.'
@@ -358,6 +364,7 @@ def main():
 
     torch.manual_seed(args.seed + args.rank)
 
+    # create model
     if '.' in args.model:
         from taowei.torch2.models import load_network
         model = load_network(args.model, **eval(args.model_kwargs))
@@ -701,6 +708,8 @@ def main():
             if model_ema is not None and not args.model_ema_force_cpu:
                 if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                     distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
+                if args.use_precise_bn_stats:
+                    compute_precise_bn_stats(model_ema, loader_train, args.world_size)
                 ema_eval_metrics = validate(
                     model_ema.ema, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)')
                 eval_metrics = ema_eval_metrics
