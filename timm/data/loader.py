@@ -105,6 +105,10 @@ class PrefetchLoader:
         return len(self.loader)
 
     @property
+    def batch_size(self):
+        return self.loader.batch_size
+
+    @property
     def sampler(self):
         return self.loader.sampler
 
