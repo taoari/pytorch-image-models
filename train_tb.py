@@ -709,7 +709,7 @@ def main():
                 if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                     distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
                 if args.use_precise_bn_stats:
-                    compute_precise_bn_stats(model_ema, loader_train, args.world_size)
+                    compute_precise_bn_stats(model_ema.ema, loader_train, args.world_size)
                 ema_eval_metrics = validate(
                     model_ema.ema, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)')
                 eval_metrics = ema_eval_metrics
